@@ -3,15 +3,15 @@ extern crate winapi;
 #[macro_use]
 extern crate lazy_static;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use kernel32::SetConsoleCtrlHandler;
 use winapi::minwindef::{BOOL, DWORD, FALSE, TRUE};
 use winapi::wincon::{CTRL_C_EVENT, CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT,
                      CTRL_SHUTDOWN_EVENT, PHANDLER_ROUTINE};
 
 lazy_static! {
-    static ref HANDLER: Arc<Mutex<Option<Box<Fn(Signal) -> HandleOutcome + Send>>>> =
-        Arc::new(Mutex::new(None));
+    static ref HANDLER: Mutex<Option<Box<Fn(Signal) -> HandleOutcome + Send>>> =
+        Mutex::new(None);
 }
 
 pub enum Signal {
@@ -39,10 +39,10 @@ pub enum HandleOutcome {
 pub type HandleResult = Result<(), ()>;
 
 pub fn set_handler<F>(f: F) -> HandleResult
-    where F: 'static + Send + Fn(Signal) -> HandleOutcome
+where
+    F: 'static + Send + Fn(Signal) -> HandleOutcome,
 {
-    let handler = HANDLER.clone();
-    let mut handler = handler.lock().unwrap();
+    let mut handler = HANDLER.lock().unwrap();
     *handler = Some(Box::new(f));
 
     set_console_ctrl_handler_wrap(Some(sig_handler), TRUE)
@@ -84,9 +84,9 @@ mod tests {
     #[test]
     fn test_sig_handler_ctrl_c() {
         let res = set_handler(|sig| match sig {
-                                  Signal::CtrlCEvent => HandleOutcome::Handled,
-                                  _ => HandleOutcome::Passthrough,
-                              });
+            Signal::CtrlCEvent => HandleOutcome::Handled,
+            _ => HandleOutcome::Passthrough,
+        });
 
         assert!(res.is_ok());
     }
