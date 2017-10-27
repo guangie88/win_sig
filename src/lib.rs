@@ -5,7 +5,7 @@ extern crate lazy_static;
 
 use std::sync::{Arc, Mutex};
 use kernel32::SetConsoleCtrlHandler;
-use winapi::minwindef::{BOOL, DWORD};
+use winapi::minwindef::{BOOL, DWORD, FALSE, TRUE};
 use winapi::wincon::{CTRL_C_EVENT, CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT,
                      CTRL_SHUTDOWN_EVENT};
 
@@ -26,11 +26,11 @@ unsafe extern "system" fn sig_handler(event: DWORD) -> BOOL {
 
     if let Some(ref handler) = *HANDLER.lock().unwrap() {
         match handler(sig) {
-            HandleOutcome::Handled => 1,
-            HandleOutcome::Passthrough => 0,
+            HandleOutcome::Handled => TRUE,
+            HandleOutcome::Passthrough => FALSE,
         }
     } else {
-        0
+        FALSE
     }
 }
 
@@ -64,12 +64,12 @@ pub fn set_handler<F>(f: F)
     *handler = Some(Box::new(f));
 
     unsafe {
-        SetConsoleCtrlHandler(Some(sig_handler), 1);
+        SetConsoleCtrlHandler(Some(sig_handler), TRUE);
     }
 }
 
 pub fn reset() {
-    unsafe { SetConsoleCtrlHandler(None, 0); }
+    unsafe { SetConsoleCtrlHandler(None, FALSE); }
 }
 
 #[cfg(test)]
