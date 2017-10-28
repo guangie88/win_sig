@@ -49,7 +49,7 @@ pub fn set_handler<F>(f: F) -> HandleResult
 where
     F: 'static + Send + Fn(CtrlEvent) -> HandleOutcome,
 {
-    match HANDLER.try_lock() {
+    match HANDLER.lock() {
         Ok(mut handler) => {
             *handler = Some(Box::new(f));
             set_console_ctrl_handler_wrap(Some(sig_handler), TRUE)
@@ -79,7 +79,7 @@ unsafe extern "system" fn sig_handler(event: DWORD) -> BOOL {
 
     // if the handler mutex cannot be locked or if the signal received is not part of list
     // simply do not handle and passthrough
-    match HANDLER.try_lock() {
+    match HANDLER.lock() {
         Ok(handler_guard) => {
             if let (&Some(ref handler), Some(ref sig)) = (&*handler_guard, sig) {
                 match handler(*sig) {
