@@ -3,30 +3,26 @@ Wraps Windows signal handling mechanism with a safer and easier to understand ca
 
 [![Build status](https://ci.appveyor.com/api/projects/status/0pl4g0tb909u3j6s/branch/master?svg=true)](https://ci.appveyor.com/project/guangie88/win-sig/branch/master)
 
-Not for serious usage yet, especially since `unwrap` is invoked during `Mutex` lock operation.
+May contain bugs at this stage.
+
+## How to Build
+`cargo build --examples` for Debug build, `cargo build --release --examples` for Release build. Both commands will build the library as well as the executable example to demonstrate the use of the library.
+
+## How to Run CTRL-C Example
+The `five_ctrl_c` example cannot be executed under Cygwin/MinGW `bash` or `cargo run` context. As such, only `cmd` should be used and directly run `target\debug\examples\five_ctrl_c.exe` for Debug build, or `target\release\examples\five_ctrl_c.exe` for Release build.
 
 ## CTRL-C Handling Example (`five_ctrl_c.rs`)
 ```Rust
-// executable must be run in cmd and not under Cygwin/MinGW bash
+// executable must be run in cmd without cargo run and not under Cygwin/MinGW bash
 // otherwise the CTRL-C handling will not work properly
 
 extern crate win_sig;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use win_sig::{HandleOutcome, Signal};
+use win_sig::{CtrlEvent, HandleError, HandleOutcome, HandleResult};
 
-enum RunError {
-    Unknown,
-}
-
-impl From<()> for RunError {
-    fn from(_: ()) -> RunError {
-        RunError::Unknown
-    }
-}
-
-fn run() -> Result<(), RunError> {
+fn run() -> HandleResult {
     const EXIT_COUNT: usize = 5;
 
     win_sig::reset()?;
@@ -36,7 +32,7 @@ fn run() -> Result<(), RunError> {
 
     win_sig::set_handler(move |sig| {
         match sig {
-            Signal::CtrlCEvent => {
+            CtrlEvent::C => {
                 handler_counter.fetch_add(1, Ordering::SeqCst);
                 let left_count = EXIT_COUNT - handler_counter.load(Ordering::Relaxed);
 
@@ -66,7 +62,8 @@ fn run() -> Result<(), RunError> {
 fn main() {
     match run() {
         Ok(()) => println!("Program completed!"),
-        Err(_) => println!("Unknown error in program, terminating..."),
+        Err(HandleError::Lock) => println!("Encountered handler mutex lock error, terminating..."),
+        Err(HandleError::Os) => println!("Unable to set handler correctly, terminating..."),
     }
 }
 ```

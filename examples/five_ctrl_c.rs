@@ -1,23 +1,13 @@
-// executable must be run in cmd and not under Cygwin/MinGW bash
+// executable must be run in cmd without cargo run and not under Cygwin/MinGW bash
 // otherwise the CTRL-C handling will not work properly
 
 extern crate win_sig;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use win_sig::{HandleOutcome, Signal};
+use win_sig::{CtrlEvent, HandleError, HandleOutcome, HandleResult};
 
-enum RunError {
-    Unknown,
-}
-
-impl From<()> for RunError {
-    fn from(_: ()) -> RunError {
-        RunError::Unknown
-    }
-}
-
-fn run() -> Result<(), RunError> {
+fn run() -> HandleResult {
     const EXIT_COUNT: usize = 5;
 
     win_sig::reset()?;
@@ -27,7 +17,7 @@ fn run() -> Result<(), RunError> {
 
     win_sig::set_handler(move |sig| {
         match sig {
-            Signal::CtrlCEvent => {
+            CtrlEvent::C => {
                 handler_counter.fetch_add(1, Ordering::SeqCst);
                 let left_count = EXIT_COUNT - handler_counter.load(Ordering::Relaxed);
 
@@ -57,6 +47,7 @@ fn run() -> Result<(), RunError> {
 fn main() {
     match run() {
         Ok(()) => println!("Program completed!"),
-        Err(_) => println!("Unknown error in program, terminating..."),
+        Err(HandleError::Lock) => println!("Encountered handler mutex lock error, terminating..."),
+        Err(HandleError::Os) => println!("Unable to set handler correctly, terminating..."),
     }
 }

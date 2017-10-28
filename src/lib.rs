@@ -10,25 +10,32 @@ use winapi::wincon::{CTRL_C_EVENT, CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_LOGO
                      CTRL_SHUTDOWN_EVENT, PHANDLER_ROUTINE};
 
 lazy_static! {
-    static ref HANDLER: Mutex<Option<Box<Fn(Signal) -> HandleOutcome + Send>>> =
+    static ref HANDLER: Mutex<Option<Box<Fn(CtrlEvent) -> HandleOutcome + Send>>> =
         Mutex::new(None);
 }
 
-pub enum Signal {
+#[derive(Clone, Copy)]
+pub enum CtrlEvent {
     /// Represent CTRL_C_EVENT (0)
-    CtrlCEvent,
+    C,
 
     /// Represent CTRL_BREAK_EVENT (1)
-    CtrlBreakEvent,
+    Break,
 
     /// Represent CTRL_CLOSE_EVENT (2)
-    CtrlCloseEvent,
+    Close,
 
     /// Represent CTRL_LOGOFF_EVENT (5)
-    CtrlLogoffEvent,
+    Logoff,
 
     /// Represent CTRL_SHUTDOWN_EVENT (6)
-    CtrlShutdownEvent,
+    Shutdown,
+}
+
+#[derive(Clone)]
+pub enum HandleError {
+    Lock,
+    Os,
 }
 
 pub enum HandleOutcome {
@@ -36,16 +43,19 @@ pub enum HandleOutcome {
     Passthrough,
 }
 
-pub type HandleResult = Result<(), ()>;
+pub type HandleResult = Result<(), HandleError>;
 
 pub fn set_handler<F>(f: F) -> HandleResult
 where
-    F: 'static + Send + Fn(Signal) -> HandleOutcome,
+    F: 'static + Send + Fn(CtrlEvent) -> HandleOutcome,
 {
-    let mut handler = HANDLER.lock().unwrap();
-    *handler = Some(Box::new(f));
-
-    set_console_ctrl_handler_wrap(Some(sig_handler), TRUE)
+    match HANDLER.try_lock() {
+        Ok(mut handler) => {
+            *handler = Some(Box::new(f));
+            set_console_ctrl_handler_wrap(Some(sig_handler), TRUE)
+        },
+        Err(_) => Err(HandleError::Lock),
+    }
 }
 
 pub fn reset() -> HandleResult {
@@ -54,26 +64,33 @@ pub fn reset() -> HandleResult {
 
 fn set_console_ctrl_handler_wrap(handler_routine: PHANDLER_ROUTINE, add: BOOL) -> HandleResult {
     let ret = unsafe { SetConsoleCtrlHandler(handler_routine, add) };
-    if ret != 0 { Ok(()) } else { Err(()) }
+    if ret != 0 { Ok(()) } else { Err(HandleError::Os) }
 }
 
 unsafe extern "system" fn sig_handler(event: DWORD) -> BOOL {
     let sig = match event {
-        CTRL_C_EVENT => Signal::CtrlCEvent,
-        CTRL_BREAK_EVENT => Signal::CtrlBreakEvent,
-        CTRL_CLOSE_EVENT => Signal::CtrlCloseEvent,
-        CTRL_LOGOFF_EVENT => Signal::CtrlLogoffEvent,
-        CTRL_SHUTDOWN_EVENT => Signal::CtrlShutdownEvent,
-        _ => Signal::CtrlCEvent,
+        CTRL_C_EVENT => Some(CtrlEvent::C),
+        CTRL_BREAK_EVENT => Some(CtrlEvent::Break),
+        CTRL_CLOSE_EVENT => Some(CtrlEvent::Close),
+        CTRL_LOGOFF_EVENT => Some(CtrlEvent::Logoff),
+        CTRL_SHUTDOWN_EVENT => Some(CtrlEvent::Shutdown),
+        _ => None,
     };
 
-    if let Some(ref handler) = *HANDLER.lock().unwrap() {
-        match handler(sig) {
-            HandleOutcome::Handled => TRUE,
-            HandleOutcome::Passthrough => FALSE,
-        }
-    } else {
-        FALSE
+    // if the handler mutex cannot be locked or if the signal received is not part of list
+    // simply do not handle and passthrough
+    match HANDLER.try_lock() {
+        Ok(handler_guard) => {
+            if let (&Some(ref handler), Some(ref sig)) = (&*handler_guard, sig) {
+                match handler(*sig) {
+                    HandleOutcome::Handled => TRUE,
+                    HandleOutcome::Passthrough => FALSE,
+                }
+            } else {
+                FALSE
+            }
+        },
+        Err(_) => FALSE,
     }
 }
 
@@ -84,7 +101,7 @@ mod tests {
     #[test]
     fn test_sig_handler_ctrl_c() {
         let res = set_handler(|sig| match sig {
-            Signal::CtrlCEvent => HandleOutcome::Handled,
+            CtrlEvent::C => HandleOutcome::Handled,
             _ => HandleOutcome::Passthrough,
         });
 
